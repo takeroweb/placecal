@@ -1,0 +1,13 @@
+{
+  "name": "placecal",
+  "private": true,
+  "scripts": {
+    "setup": "npm --prefix server install && npm --prefix web install",
+    "dev:server": "npm --prefix server run dev",
+    "dev:web": "npm --prefix web run dev",
+    "build": "npm --prefix web run build",
+    "start": "npm --prefix server start",
+    "test": "npm --prefix server test",
+    "deploy:pages": "bash scripts/deploy-pages.sh"
+  }
+}

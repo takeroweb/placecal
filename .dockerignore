@@ -1,0 +1,7 @@
+**/node_modules
+web/dist
+server/data
+server/test
+**/*.db
+.git
+.DS_Store
