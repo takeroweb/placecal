@@ -175,7 +175,7 @@ input, select { font: inherit; color: inherit; }
   font-size: 13px; box-shadow: var(--shadow); animation: drop-in .18s ease-out;
 }
 .toast.error { background: #b42318; color: #fff; }
-.toast-undo { border: 0; background: transparent; color: #ffb37a; font-weight: 700; min-height: 32px; padding: 0 6px; cursor: pointer; }
+.toast-undo { border: 0; background: transparent; color: #ffb37a; font-weight: 700; min-height: 44px; padding: 0 10px; cursor: pointer; }
 
 /* ---------- sheet (template form) ---------- */
 .sheet-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .35); z-index: 60; display: flex; align-items: flex-end; justify-content: center; }
@@ -452,3 +452,10 @@ input:not([type=checkbox]):not([type=radio]):not([type=color]), select, textarea
   .pc-hint p { margin: 0; }
   .pc-hint code { font-size: 11px; word-break: break-all; color: var(--ink-3); }
 }
+
+/* popups: the whole sheet follows the finger (swipe down to close); its text never slides sideways or bounces */
+.sheet { overscroll-behavior: none; overflow-x: hidden; touch-action: pan-y; will-change: transform; }
+.sheet-backdrop { transition: background-color .2s; }
+.sheet-grip { width: 44px; height: 5px; margin: 6px auto 12px; }
+/* a held card in the List */
+.tcard.lifted { opacity: .35; transform: scale(.96); }

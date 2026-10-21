@@ -7,7 +7,8 @@ import type { Template } from './types'
  *  mouse : press + move > 5px            → drag; release on a date → place
  *  touch : swipe UP (vertical dominant)  → drag; release on a date → place,
  *                                          release elsewhere → placement mode ("どの日に配置しますか？")
- *          sideways movement             → ignored, browser scrolls the tray (touch-action: pan-x)
+ *          long-press (hold still)       → drag in any direction (reorder in the List, move into a folder, place)
+ *          sideways movement before that → ignored, browser scrolls the tray (touch-action: pan-x)
  *  any   : tap without moving            → toggle placement mode, then tap dates
  *  drag released on another template card → reorder (the card moves to that position)
  *  drag released on a folder (or the "back" crumb) → move the template into that folder
@@ -21,6 +22,19 @@ export type DragState = {
 
 /** data-folder-drop value meaning "top level of the List" */
 export const ROOT_FOLDER = '@root'
+
+const LONG_PRESS_MS = 380
+
+/** While a card is held near the List's left/right edge, scroll the List so far cards can be reached. */
+function autoScroll(x: number, y: number) {
+  const grid = document.querySelector<HTMLElement>('.tray-grid')
+  if (!grid) return
+  const r = grid.getBoundingClientRect()
+  if (y < r.top - 20 || y > r.bottom + 20) return
+  const edge = 36
+  if (x < r.left + edge) grid.scrollLeft -= 10
+  else if (x > r.right - edge) grid.scrollLeft += 10
+}
 
 type Opts = {
   onDrop: (t: Template, date: string) => void
@@ -60,34 +74,54 @@ export function useTemplateGesture({ onDrop, onTap, onSwipeNoTarget, onReorder, 
     const isMouse = e.pointerType === 'mouse'
     let mode: 'pending' | 'drag' | 'scroll' = 'pending'
     const pid = e.pointerId
+    let last = { x: sx, y: sy }
+
+    const update = (x: number, y: number) => {
+      const over = templateAtPoint(x, y)
+      setDrag({
+        template, x, y, overDate: dateAtPoint(x, y),
+        overTemplateId: over === template.templateId ? null : over,
+        overFolder: folderAtPoint(x, y),
+      })
+    }
+    const pickUp = () => {
+      mode = 'drag'
+      navigator.vibrate?.(12)
+      update(last.x, last.y)
+    }
+    // Touch: holding still picks the card up — then it can go onto another card (reorder),
+    // a folder (move) or a date (place). Moving before that is a normal scroll / swipe.
+    const hold = isMouse ? 0 : window.setTimeout(() => { if (mode === 'pending') pickUp() }, LONG_PRESS_MS)
+
+    // Once a card is held, the finger must not scroll the List / page (iOS needs touchmove cancelled).
+    const blockScroll = (ev: TouchEvent) => { if (mode === 'drag') ev.preventDefault() }
 
     const move = (ev: PointerEvent) => {
       if (ev.pointerId !== pid) return
+      last = { x: ev.clientX, y: ev.clientY }
       const dx = ev.clientX - sx, dy = ev.clientY - sy
       if (mode === 'pending') {
         if (isMouse) {
-          if (Math.hypot(dx, dy) > 5) mode = 'drag'
+          if (Math.hypot(dx, dy) > 5) pickUp()
         } else if (dy < -10 && Math.abs(dy) > Math.abs(dx) * 1.2) {
-          mode = 'drag' // upward swipe picks the template up
-          navigator.vibrate?.(10)
+          window.clearTimeout(hold)
+          pickUp() // upward swipe picks the template up right away
         } else if (Math.hypot(dx, dy) > 10) {
-          mode = 'scroll' // let the tray scroll; never steal sideways gestures
+          window.clearTimeout(hold)
+          mode = 'scroll' // sideways before the hold: let the List scroll
         }
       }
       if (mode === 'drag') {
         ev.preventDefault()
-        const over = templateAtPoint(ev.clientX, ev.clientY)
-        setDrag({
-          template, x: ev.clientX, y: ev.clientY, overDate: dateAtPoint(ev.clientX, ev.clientY),
-          overTemplateId: over === template.templateId ? null : over,
-          overFolder: folderAtPoint(ev.clientX, ev.clientY),
-        })
+        update(ev.clientX, ev.clientY)
+        autoScroll(ev.clientX, ev.clientY)
       }
     }
     const up = (ev: PointerEvent) => {
       if (ev.pointerId !== pid) return
+      const m = mode
       finish()
-      if (mode === 'drag') {
+      if (m === 'drag') {
         const date = dateAtPoint(ev.clientX, ev.clientY)
         const target = templateAtPoint(ev.clientX, ev.clientY)
         const folder = folderAtPoint(ev.clientX, ev.clientY)
@@ -95,7 +129,7 @@ export function useTemplateGesture({ onDrop, onTap, onSwipeNoTarget, onReorder, 
         else if (folder) opts.current.onMoveToFolder(template, folder === ROOT_FOLDER ? null : folder)
         else if (target && target !== template.templateId) opts.current.onReorder(template, target)
         else if (!isMouse && !target) opts.current.onSwipeNoTarget(template)
-      } else if (mode === 'pending') {
+      } else if (m === 'pending') {
         opts.current.onTap(template)
       }
     }
@@ -104,15 +138,18 @@ export function useTemplateGesture({ onDrop, onTap, onSwipeNoTarget, onReorder, 
       finish()
     }
     const finish = () => {
+      window.clearTimeout(hold)
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', cancel)
+      window.removeEventListener('touchmove', blockScroll)
       setDrag(null)
     }
     cleanup.current = finish
     window.addEventListener('pointermove', move, { passive: false })
     window.addEventListener('pointerup', up)
     window.addEventListener('pointercancel', cancel)
+    window.addEventListener('touchmove', blockScroll, { passive: false })
   }, [])
 
   return { drag, onPointerDown }

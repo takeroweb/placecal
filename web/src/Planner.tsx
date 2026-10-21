@@ -13,6 +13,7 @@ import { BulkSheet } from './components/BulkSheet'
 import { DaySheet } from './components/DaySheet'
 import { useTemplateGesture } from './useTemplateGesture'
 import { useEventGesture } from './useEventGesture'
+import { useSwipeNav } from './useSwipeNav'
 
 // '#/day/2026-10-15' → that date's timetable is open.
 const readDay = () => /^#\/day\/(\d{4}-\d{2}-\d{2})$/.exec(location.hash)?.[1] ?? null
@@ -458,6 +459,8 @@ export function Planner({ user, onLogout }: { user: User; onLogout?: () => void 
   const isThisMonth = ym.y === now.getFullYear() && ym.m === now.getMonth()
   const drag = gesture.drag
   const evDrag = eventGesture.drag
+  // swipe the calendar sideways → previous / next month
+  const calSwipe = useSwipeNav<HTMLElement>(() => shiftMonth(-1), () => shiftMonth(1), !drag && !evDrag)
 
   return (
     <div className={`app ${drag || evDrag ? 'is-dragging' : ''}`}>
@@ -489,7 +492,7 @@ export function Planner({ user, onLogout }: { user: User; onLogout?: () => void 
         </div>
       </header>
 
-      <main className="cal-area">
+      <main className="cal-area" ref={calSwipe}>
         {loadErr && <p className="banner error" role="alert">{loadErr}</p>}
         {armed && (
           <div className="banner place" role="status">

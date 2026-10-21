@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { addDays, jpDate, timeLabel } from '../dates'
+import { useSwipeNav } from '../useSwipeNav'
 import type { CalEvent, Category, Job } from '../types'
 
 const HOUR = 52 // px per hour
@@ -46,6 +47,8 @@ type Props = {
 /** 1日のタイムテーブル (#/day/YYYY-MM-DD). */
 export function DayTimeline({ date, today, events, categories, jobs, onDate, onClose, onOpenEvent, onNew }: Props) {
   const scroller = useRef<HTMLDivElement>(null)
+  // swipe sideways → previous / next day
+  const swipe = useSwipeNav<HTMLDivElement>(() => onDate(addDays(date, -1)), () => onDate(addDays(date, 1)))
   const allDay = events.filter((e) => !e.startTime)
   const blocks = layout(events)
   const color = (e: CalEvent) => categories.get(e.categoryId ?? '')?.color ?? '#6b7280'
@@ -73,7 +76,7 @@ export function DayTimeline({ date, today, events, categories, jobs, onDate, onC
   }
 
   return (
-    <div className="daypage" role="dialog" aria-label={`${jpDate(date)}のタイムテーブル`}>
+    <div className="daypage" ref={swipe} role="dialog" aria-label={`${jpDate(date)}のタイムテーブル`}>
       <header className="topbar">
         <button className="btn small ghost back" onClick={onClose}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>

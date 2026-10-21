@@ -68,7 +68,7 @@ export function TemplateTray(p: Props) {
           ))}
         </nav>
         <p className="tray-hint">
-          上にスワイプで日付へ・フォルダで離すと移動
+          長押しで並び替え・フォルダへ移動／上スワイプで日付へ
         </p>
         <div className="tray-actions">
           {here && (

@@ -6,6 +6,7 @@ import { Planner } from './Planner'
 import { EarningsPage } from './components/EarningsPage'
 import { JobSettingsPage } from './components/JobSettingsPage'
 import { PcHint } from './components/PcHint'
+import { useSheetSwipe } from './useSheetSwipe'
 
 // Tiny hash router: '#/' calendar (+ '#/day/…'), '#/earnings' 給料, '#/earnings/jobs' 勤務先の設定.
 const readRoute = () =>
@@ -15,6 +16,7 @@ export default function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
   const [localMode, setLocalMode] = useState(false)
   const [route, setRoute] = useState(readRoute)
+  useSheetSwipe() // every popup can be swiped down to close
   useEffect(() => {
     const on = () => setRoute(readRoute())
     window.addEventListener('hashchange', on)
