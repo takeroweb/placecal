@@ -459,3 +459,6 @@ input:not([type=checkbox]):not([type=radio]):not([type=color]), select, textarea
 .sheet-grip { width: 44px; height: 5px; margin: 6px auto 12px; }
 /* a held card in the List */
 .tcard.lifted { opacity: .35; transform: scale(.96); }
+
+/* a card selected with one tap can be dragged straight away: the browser must not pan from it */
+.tcard.armed { touch-action: none; }

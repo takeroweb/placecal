@@ -8,6 +8,7 @@ import type { Template } from './types'
  *  touch : swipe UP (vertical dominant)  → drag; release on a date → place,
  *                                          release elsewhere → placement mode ("どの日に配置しますか？")
  *          long-press (hold still)       → drag in any direction (reorder in the List, move into a folder, place)
+ *          tap once, then drag that card → same as long-press (the selected card never scrolls the List)
  *          sideways movement before that → ignored, browser scrolls the tray (touch-action: pan-x)
  *  any   : tap without moving            → toggle placement mode, then tap dates
  *  drag released on another template card → reorder (the card moves to that position)
@@ -24,6 +25,18 @@ export type DragState = {
 export const ROOT_FOLDER = '@root'
 
 const LONG_PRESS_MS = 380
+
+/**
+ * True while a card is held. A document-level touchmove listener registered up front (non-passive)
+ * cancels scrolling then — iOS ignores listeners added after the touch has started.
+ */
+let holding = false
+let scrollGuardInstalled = false
+function installScrollGuard() {
+  if (scrollGuardInstalled) return
+  scrollGuardInstalled = true
+  document.addEventListener('touchmove', (e) => { if (holding) e.preventDefault() }, { passive: false })
+}
 
 /** While a card is held near the List's left/right edge, scroll the List so far cards can be reached. */
 function autoScroll(x: number, y: number) {
@@ -67,11 +80,14 @@ export function useTemplateGesture({ onDrop, onTap, onSwipeNoTarget, onReorder, 
   const cleanup = useRef<() => void>(() => {})
 
   useEffect(() => () => cleanup.current(), [])
+  useEffect(installScrollGuard, [])
 
   const onPointerDown = useCallback((e: React.PointerEvent, template: Template) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return
     const sx = e.clientX, sy = e.clientY
     const isMouse = e.pointerType === 'mouse'
+    // A card selected with one tap (.armed, CSS touch-action: none) can be moved right away by dragging it.
+    const selected = (e.currentTarget as HTMLElement).classList.contains('armed')
     let mode: 'pending' | 'drag' | 'scroll' = 'pending'
     const pid = e.pointerId
     let last = { x: sx, y: sy }
@@ -86,6 +102,7 @@ export function useTemplateGesture({ onDrop, onTap, onSwipeNoTarget, onReorder, 
     }
     const pickUp = () => {
       mode = 'drag'
+      holding = true
       navigator.vibrate?.(12)
       update(last.x, last.y)
     }
@@ -93,16 +110,13 @@ export function useTemplateGesture({ onDrop, onTap, onSwipeNoTarget, onReorder, 
     // a folder (move) or a date (place). Moving before that is a normal scroll / swipe.
     const hold = isMouse ? 0 : window.setTimeout(() => { if (mode === 'pending') pickUp() }, LONG_PRESS_MS)
 
-    // Once a card is held, the finger must not scroll the List / page (iOS needs touchmove cancelled).
-    const blockScroll = (ev: TouchEvent) => { if (mode === 'drag') ev.preventDefault() }
-
     const move = (ev: PointerEvent) => {
       if (ev.pointerId !== pid) return
       last = { x: ev.clientX, y: ev.clientY }
       const dx = ev.clientX - sx, dy = ev.clientY - sy
       if (mode === 'pending') {
-        if (isMouse) {
-          if (Math.hypot(dx, dy) > 5) pickUp()
+        if (isMouse || selected) {
+          if (Math.hypot(dx, dy) > 6) { window.clearTimeout(hold); pickUp() }
         } else if (dy < -10 && Math.abs(dy) > Math.abs(dx) * 1.2) {
           window.clearTimeout(hold)
           pickUp() // upward swipe picks the template up right away
@@ -142,14 +156,13 @@ export function useTemplateGesture({ onDrop, onTap, onSwipeNoTarget, onReorder, 
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', cancel)
-      window.removeEventListener('touchmove', blockScroll)
+      holding = false
       setDrag(null)
     }
     cleanup.current = finish
     window.addEventListener('pointermove', move, { passive: false })
     window.addEventListener('pointerup', up)
     window.addEventListener('pointercancel', cancel)
-    window.addEventListener('touchmove', blockScroll, { passive: false })
   }, [])
 
   return { drag, onPointerDown }
