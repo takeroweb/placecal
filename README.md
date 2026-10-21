@@ -24,7 +24,8 @@ placecal/
     src/useTemplateGesture.ts テンプレートのドラッグ/上スワイプ/タップ
     src/useEventGesture.ts    予定の移動（PC: ドラッグ / スマホ: 長押し→移動）・タップで編集
     src/components/Calendar.tsx      月カレンダー
-    src/components/TemplateTray.tsx  テンプレートトレイ
+    src/components/TemplateTray.tsx  List（フォルダ＋テンプレート）
+    src/components/FolderSheet.tsx   フォルダの作成・名前変更・削除
     src/components/TemplateForm.tsx  テンプレート作成・編集 / 予定の追加・編集（共通フォーム）
     src/components/CategorySheet.tsx カテゴリーの追加・名前変更・色変更・削除
     src/components/BulkSheet.tsx     複数日に一括配置（期間＋曜日）
@@ -65,7 +66,7 @@ npm run build && npm start   # → http://localhost:3001
 ## テスト
 
 ```bash
-npm test   # API テスト 48 件
+npm test   # API テスト 53 件
 ```
 
 ## API（すべて `/api` 配下、認証必須。エラーは `{ "error": { "code", "message", "field?" } }`）
@@ -82,7 +83,9 @@ npm test   # API テスト 48 件
 | PUT/DELETE | /jobs/:id | 変更 / 削除（テンプレート・予定は残り、バイト先が外れる） |
 | GET | /widget | ウィジェット用（次のシフト・7日分の予定・今月の給料見込み） |
 | GET | /earnings?month=YYYY-MM | その月に締まる給料（勤務先ごとの締め日〜締め日。時給×(勤務時間−休憩) ＋ 交通費×出勤日数） |
-| GET/POST | /templates | 一覧 / 作成（`jobId`, `breakMinutes` 任意） |
+| GET/POST | /folders | List のフォルダ 一覧 / 作成 `{name, parentId?}`（入れ子可・6階層まで） |
+| PUT/DELETE | /folders/:id | 名前・親の変更 / 削除（中身は1つ上の階層へ移動） |
+| GET/POST | /templates | 一覧 / 作成（`folderId`, `jobId`, `breakMinutes` 任意） |
 | PUT | /templates/order | 並び順 `{templateIds: [...]}` |
 | PUT/DELETE | /templates/:id | 変更 / 削除（既存予定は変更されない） |
 | GET | /events?start=YYYY-MM-DD&end=YYYY-MM-DD | 期間内の予定（最大400日） |
@@ -104,6 +107,8 @@ npm test   # API テスト 48 件
 | 1日のタイムテーブル | 右上の時計アイコン（¥ の左）／日付の一覧 →「タイムテーブル」 | 同左。空き時間をタップでその時刻から追加 |
 | その日の予定を全部見る | 予定のある日付の空白部分 / 「+N」をクリック | 同左（タップ） |
 | カテゴリー管理 | 右上のパレットアイコン | 同左 |
+| List のフォルダ（例: バイト › ホテル › 時間別テンプレート） | 右のフォルダ＋アイコンで作成、タップで開く、上部の「List / バイト」で移動 | 同左 |
+| テンプレートをフォルダへ移動 | フォルダ（または「‹」）の上へドラッグ／編集画面の「フォルダ」 | 上スワイプで持ち上げてフォルダの上で離す |
 | テンプレートの並び替え | カードを別のカードの上へドラッグ | カードを上にスワイプして持ち上げ、別のカードの上で離す |
 | 給料を見る | 右上の ¥ アイコン | 同左 |
 | 勤務先（時給・交通費・休憩ルール・締め日・支給日）の設定 | 給料ページ右上の設定アイコン | 同左 |
