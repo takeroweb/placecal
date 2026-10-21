@@ -5,6 +5,7 @@ import { AuthScreen } from './components/AuthScreen'
 import { Planner } from './Planner'
 import { EarningsPage } from './components/EarningsPage'
 import { JobSettingsPage } from './components/JobSettingsPage'
+import { PcHint } from './components/PcHint'
 
 // Tiny hash router: '#/' calendar (+ '#/day/…'), '#/earnings' 給料, '#/earnings/jobs' 勤務先の設定.
 const readRoute = () =>
@@ -26,7 +27,8 @@ export default function App() {
 
   if (user === undefined) return <div className="boot" aria-busy="true" />
   if (!user) return <AuthScreen onAuthed={setUser} />
-  if (route === 'earnings') return <EarningsPage />
-  if (route === 'jobs') return <JobSettingsPage />
-  return <Planner user={user} onLogout={localMode ? undefined : async () => { await api.logout().catch(() => {}); setUser(null) }} />
+  const page = route === 'earnings' ? <EarningsPage />
+    : route === 'jobs' ? <JobSettingsPage />
+    : <Planner user={user} onLogout={localMode ? undefined : async () => { await api.logout().catch(() => {}); setUser(null) }} />
+  return <>{page}<PcHint /></>
 }

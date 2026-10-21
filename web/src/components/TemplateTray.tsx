@@ -68,8 +68,7 @@ export function TemplateTray(p: Props) {
           ))}
         </nav>
         <p className="tray-hint">
-          <span className="only-touch">上にスワイプで日付へ・フォルダで離すと移動</span>
-          <span className="only-mouse">日付へドラッグで配置 / フォルダへドラッグで移動 / カード同士で並び替え</span>
+          上にスワイプで日付へ・フォルダで離すと移動
         </p>
         <div className="tray-actions">
           {here && (
