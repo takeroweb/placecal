@@ -17,7 +17,10 @@ import { useEventGesture } from './useEventGesture'
 // '#/day/2026-10-15' → that date's timetable is open.
 const readDay = () => /^#\/day\/(\d{4}-\d{2}-\d{2})$/.exec(location.hash)?.[1] ?? null
 
-type Toast = { id: number; text: string; undo?: () => void; error?: boolean }
+type Toast = { id: number; text: string; undo?: () => void; error?: boolean; ms?: number }
+
+/** Undo toast after adding a schedule: short, so it doesn't sit over the calendar. */
+const ADDED_TOAST_MS = 1500
 
 /** onLogout is absent when the server runs without login. */
 export function Planner({ user, onLogout }: { user: User; onLogout?: () => void }) {
@@ -110,7 +113,7 @@ export function Planner({ user, onLogout }: { user: User; onLogout?: () => void 
   const showToast = useCallback((t: Omit<Toast, 'id'>) => {
     window.clearTimeout(toastTimer.current)
     setToast({ ...t, id: Date.now() })
-    toastTimer.current = window.setTimeout(() => setToast(null), t.undo ? 4500 : 3000)
+    toastTimer.current = window.setTimeout(() => setToast(null), t.ms ?? (t.undo ? 4500 : 3000))
   }, [])
 
   const flashDate = useCallback((date: string) => {
@@ -134,7 +137,7 @@ export function Planner({ user, onLogout }: { user: User; onLogout?: () => void 
       const { event } = await api.placeTemplate(t.templateId, date)
       setEvents((p) => p.map((e) => (e.eventId === tempId ? event : e)))
       showToast({
-        text: `${jpDate(date)} に「${t.title}」を配置`,
+        text: `${jpDate(date)} に「${t.title}」を配置`, ms: ADDED_TOAST_MS,
         undo: () => {
           setEvents((p) => p.filter((e) => e.eventId !== event.eventId))
           api.deleteEvent(event.eventId).catch(() => {
@@ -182,7 +185,7 @@ export function Planner({ user, onLogout }: { user: User; onLogout?: () => void 
       setCreating(null)
       created.forEach((e) => flashDate(e.date))
       showToast({
-        text: `${jpDate(input.date)}〜${jpDate(endDate)} に「${input.title}」を追加`,
+        text: `${jpDate(input.date)}〜${jpDate(endDate)} に「${input.title}」を追加`, ms: ADDED_TOAST_MS,
         undo: () => {
           setToast(null)
           const ids = new Set(created.map((e) => e.eventId))
@@ -200,7 +203,7 @@ export function Planner({ user, onLogout }: { user: User; onLogout?: () => void 
     setCreating(null)
     flashDate(event.date)
     showToast({
-      text: `${jpDate(event.date)} に「${event.title}」を追加`,
+      text: `${jpDate(event.date)} に「${event.title}」を追加`, ms: ADDED_TOAST_MS,
       undo: () => {
         setToast(null)
         setEvents((p) => p.filter((e) => e.eventId !== event.eventId))
@@ -292,7 +295,7 @@ export function Planner({ user, onLogout }: { user: User; onLogout?: () => void 
     setBulkFor(null)
     setArmed(null)
     showToast({
-      text: `「${t.title}」を${created.length}日に配置`,
+      text: `「${t.title}」を${created.length}日に配置`, ms: ADDED_TOAST_MS,
       undo: () => {
         setToast(null)
         const ids = new Set(created.map((e) => e.eventId))
