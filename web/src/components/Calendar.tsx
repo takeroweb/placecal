@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { WEEKDAYS, monthGrid, ymd } from '../dates'
+import { WEEKDAYS_SUN, monthGrid, shortRange, ymd } from '../dates'
 import type { CalEvent, Category } from '../types'
 
 type Props = {
@@ -30,8 +30,8 @@ export const Calendar = memo(function Calendar(p: Props) {
   return (
     <div className={`cal ${p.armed ? 'is-armed' : ''}`} style={{ ['--weeks' as string]: grid.length }}>
       <div className="cal-head" aria-hidden="true">
-        {WEEKDAYS.map((w, i) => (
-          <div key={w} className={`cal-wd ${i === 5 ? 'sat' : ''} ${i === 6 ? 'sun' : ''}`}>{w}</div>
+        {WEEKDAYS_SUN.map((w, i) => (
+          <div key={w} className={`cal-wd ${i === 6 ? 'sat' : ''} ${i === 0 ? 'sun' : ''}`}>{w}</div>
         ))}
       </div>
       <div className="cal-body" role="grid" aria-label={`${p.year}年${p.month + 1}月`}>
@@ -41,14 +41,14 @@ export const Calendar = memo(function Calendar(p: Props) {
               const date = ymd(d)
               const evs = p.eventsByDate.get(date) ?? []
               const out = d.getMonth() !== p.month
-              const dow = (d.getDay() + 6) % 7
+              const dow = d.getDay() // 0 = Sun
               const cls = [
                 'cal-cell',
                 out && 'out',
                 date === p.today && 'today',
                 date === p.hoverDate && 'drop-hover',
                 p.flashDates.has(date) && 'flash',
-                dow === 5 && 'sat', dow === 6 && 'sun',
+                dow === 6 && 'sat', dow === 0 && 'sun',
               ].filter(Boolean).join(' ')
               return (
                 <div
@@ -83,7 +83,9 @@ export const Calendar = memo(function Calendar(p: Props) {
                           }}
                           onContextMenu={(ev) => ev.preventDefault()}
                         >
-                          {e.startTime && <span className="chip-time">{e.startTime.replace(/^0/, '')}</span>}
+                          {/* phone: '17-22' on its own line; wider screens: '17:00-22:00' before the title */}
+                          {e.startTime && <span className="chip-time short">{shortRange(e.startTime, e.endTime)}</span>}
+                          {e.startTime && <span className="chip-time full">{e.startTime}{e.endTime ? `-${e.endTime}` : ''}</span>}
                           <span className="chip-title">{e.title}</span>
                         </button>
                       )

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { ApiError } from '../api'
-import { WEEKDAYS, addDays, timeLabel } from '../dates'
+import { WEEKDAYS_SUN, addDays, timeLabel } from '../dates'
 import type { Template } from '../types'
 
 type Props = {
@@ -11,8 +11,6 @@ type Props = {
   onClose: () => void
 }
 
-// WEEKDAYS is Mon-first; the API uses JS getDay() numbering (0=Sun..6=Sat).
-const jsDay = (monFirstIndex: number) => (monFirstIndex + 1) % 7
 
 /** テンプレート選択 → 開始日・終了日（＋曜日）→ 一括作成 */
 export function BulkSheet({ template, color, defaultStart, onSubmit, onClose }: Props) {
@@ -76,8 +74,7 @@ export function BulkSheet({ template, color, defaultStart, onSubmit, onClose }: 
         <fieldset className="field">
           <legend>曜日</legend>
           <div className="wd-pick">
-            {WEEKDAYS.map((w, i) => {
-              const d = jsDay(i)
+            {WEEKDAYS_SUN.map((w, d) => { // d = getDay() numbering used by the API (0=Sun..6=Sat)
               return (
                 <button key={w} type="button" className={`wd ${days.has(d) ? 'on' : ''} ${d === 6 ? 'sat' : ''} ${d === 0 ? 'sun' : ''}`}
                   aria-pressed={days.has(d)} onClick={() => toggle(d)}>{w}</button>

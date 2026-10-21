@@ -1,6 +1,6 @@
 // On-device persistence for the browser-only build (GitHub Pages).
 // The whole state is one small JSON document kept in IndexedDB (localStorage as a fallback).
-import type { CalEvent, Category, Job, Template, User } from '../types'
+import type { CalEvent, Category, Folder, Job, Template, User } from '../types'
 
 export type Sorted<T> = T & { sortOrder: number }
 export type State = {
@@ -8,6 +8,8 @@ export type State = {
   user: User
   categories: Sorted<Category>[]
   templates: Sorted<Template>[]
+  /** added later; older saved data has none */
+  folders?: Sorted<Folder>[]
   jobs: Sorted<Job>[]
   events: CalEvent[]
 }

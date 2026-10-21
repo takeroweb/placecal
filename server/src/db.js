@@ -46,6 +46,18 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_user ON jobs(user_id);
 
+-- List のフォルダ（入れ子可）: e.g. バイト › ホテル › (17:00〜22:00, 10:00〜15:00 …)
+CREATE TABLE IF NOT EXISTS folders (
+  id         TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  parent_id  TEXT REFERENCES folders(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_folders_user ON folders(user_id);
+
 CREATE TABLE IF NOT EXISTS templates (
   id                   TEXT PRIMARY KEY,
   user_id              TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -127,6 +139,7 @@ CREATE TABLE IF NOT EXISTS notification_jobs (
 
 // Columns added after the first release. Applied to existing databases without touching data.
 const ADDED_COLUMNS = [
+  ['templates', 'folder_id', 'TEXT REFERENCES folders(id) ON DELETE SET NULL'], // List のフォルダ (NULL = 一番上)
   ['templates', 'job_id', 'TEXT REFERENCES jobs(id) ON DELETE SET NULL'],
   ['templates', 'break_minutes', 'INTEGER NOT NULL DEFAULT 0'], // 休憩（時給が発生しない時間）
   ['events', 'job_id', 'TEXT REFERENCES jobs(id) ON DELETE SET NULL'],

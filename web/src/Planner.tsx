@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, IS_LOCAL } from './api'
 import { jpDate, monthGrid, timeLabel, todayStr, ymd } from './dates'
-import type { CalEvent, Category, EventInput, Job, JobInput, Template, TemplateInput, User } from './types'
+import type { CalEvent, Category, EventInput, Folder, Job, JobInput, Template, TemplateInput, User } from './types'
 import { Calendar } from './components/Calendar'
 import { TemplateTray } from './components/TemplateTray'
 import { EventForm, NewEventForm, TemplateForm } from './components/TemplateForm'
 import { DayTimeline } from './components/DayTimeline'
 import { AccountSheet } from './components/AccountSheet'
+import { FolderSheet } from './components/FolderSheet'
 import { CategorySheet } from './components/CategorySheet'
 import { BulkSheet } from './components/BulkSheet'
 import { DaySheet } from './components/DaySheet'
@@ -28,7 +29,13 @@ export function Planner({ user, onLogout }: { user: User; onLogout?: () => void 
   const [events, setEvents] = useState<CalEvent[]>([])
   const [armed, setArmed] = useState<Template | null>(null)
   // false = closed; otherwise the new-template form, optionally with a preselected category
-  const [formOpen, setFormOpen] = useState<false | { categoryId?: string }>(false)
+  const [formOpen, setFormOpen] = useState<false | { categoryId?: string; defaults?: Partial<TemplateInput> }>(false)
+  // List folders. The open folder is remembered on this device (a viewer convenience).
+  const [folders, setFolders] = useState<Folder[]>([])
+  const [currentFolder, setCurrentFolder] = useState<string | null>(() => {
+    try { return localStorage.getItem('placecal.folder') || null } catch { return null }
+  })
+  const [folderSheet, setFolderSheet] = useState<null | { folder?: Folder }>(null)
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null)
   const [editingEvent, setEditingEvent] = useState<CalEvent | null>(null)
   const [catOpen, setCatOpen] = useState(false)
@@ -57,8 +64,12 @@ export function Planner({ user, onLogout }: { user: User; onLogout?: () => void 
 
   // ---- data loading ----
   useEffect(() => {
-    Promise.all([api.categories(), api.templates(), api.jobs()])
-      .then(([c, t, j]) => { setCategories(c.categories); setTemplates(t.templates); setJobs(j.jobs) })
+    Promise.all([api.categories(), api.templates(), api.jobs(), api.folders()])
+      .then(([c, t, j, f]) => {
+        setCategories(c.categories); setTemplates(t.templates); setJobs(j.jobs); setFolders(f.folders)
+        // the remembered folder may have been deleted on another visit
+        setCurrentFolder((cur) => (cur && f.folders.some((x) => x.folderId === cur) ? cur : null))
+      })
       .catch((e) => setLoadErr(e instanceof ApiError ? e.message : '読み込みに失敗しました'))
   }, [])
 
@@ -299,6 +310,7 @@ export function Planner({ user, onLogout }: { user: User; onLogout?: () => void 
     onTap: (t) => setArmed((a) => (a?.templateId === t.templateId ? null : t)),
     onSwipeNoTarget: (t) => setArmed(t),
     onReorder: (t, targetId) => reorderTemplate(t, targetId),
+    onMoveToFolder: (t, folderId) => moveToFolder(t, folderId),
   })
 
   const eventGesture = useEventGesture({
@@ -320,12 +332,76 @@ export function Planner({ user, onLogout }: { user: User; onLogout?: () => void 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
-      setArmed(null); setFormOpen(false); setEditingTemplate(null); setEditingEvent(null)
+      setArmed(null); setFormOpen(false); setEditingTemplate(null); setEditingEvent(null); setFolderSheet(null)
       setCatOpen(false); setBulkFor(null); setDayOpen(null); setCreating(null); setAcctOpen(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+
+  // ---- List folders ----
+  const folderMap = useMemo(() => new Map(folders.map((f) => [f.folderId, f])), [folders])
+  const openFolder = (id: string | null) => {
+    setCurrentFolder(id)
+    try { if (id) localStorage.setItem('placecal.folder', id); else localStorage.removeItem('placecal.folder') } catch { /* ignore */ }
+  }
+  const folderName = (id: string | null) => (id ? folderMap.get(id)?.name ?? 'List' : 'List')
+
+  const moveToFolder = async (t: Template, folderId: string | null) => {
+    if ((t.folderId ?? null) === folderId) return
+    const from = t.folderId ?? null
+    setTemplates((p) => p.map((x) => (x.templateId === t.templateId ? { ...x, folderId } : x)))
+    try {
+      await api.updateTemplate(t.templateId, { folderId })
+      showToast({
+        text: `「${t.title}」を「${folderName(folderId)}」へ移動`,
+        undo: () => {
+          setToast(null)
+          setTemplates((p) => p.map((x) => (x.templateId === t.templateId ? { ...x, folderId: from } : x)))
+          api.updateTemplate(t.templateId, { folderId: from }).catch(() => {})
+        },
+      })
+    } catch (e) {
+      setTemplates((p) => p.map((x) => (x.templateId === t.templateId ? { ...x, folderId: from } : x)))
+      showToast({ text: errText(e, '移動できませんでした'), error: true })
+    }
+  }
+
+  /** New template inside a folder: prefill the folder name, and category / バイト先 / 休憩 from a template nearby. */
+  const newTemplateDefaults = (): Partial<TemplateInput> => {
+    if (!currentFolder) return {}
+    let near: Template | undefined
+    for (let f: string | null = currentFolder; f && !near; f = folderMap.get(f)?.parentId ?? null) {
+      near = templates.find((t) => t.folderId === f)
+    }
+    return {
+      folderId: currentFolder, title: folderName(currentFolder),
+      ...(near ? { categoryId: near.categoryId, jobId: near.jobId, breakMinutes: near.breakMinutes } : {}),
+    }
+  }
+
+  const saveFolder = async (name: string) => {
+    const editingFolder = folderSheet?.folder
+    if (editingFolder) {
+      const { folder } = await api.updateFolder(editingFolder.folderId, { name })
+      setFolders((p) => p.map((f) => (f.folderId === folder.folderId ? folder : f)))
+    } else {
+      const { folder } = await api.createFolder({ name, parentId: currentFolder })
+      setFolders((p) => [...p, folder])
+      showToast({ text: `フォルダ「${folder.name}」を作成しました` })
+    }
+    setFolderSheet(null)
+  }
+
+  // Same rule as the server: the folder's contents move up one level.
+  const deleteFolder = async (f: Folder) => {
+    await api.deleteFolder(f.folderId)
+    setFolders((p) => p.filter((x) => x.folderId !== f.folderId).map((x) => (x.parentId === f.folderId ? { ...x, parentId: f.parentId } : x)))
+    setTemplates((p) => p.map((t) => (t.folderId === f.folderId ? { ...t, folderId: f.parentId } : t)))
+    if (currentFolder === f.folderId) openFolder(f.parentId)
+    setFolderSheet(null)
+    showToast({ text: `フォルダ「${f.name}」を削除しました（中身は1つ上へ）` })
+  }
 
   const createTemplate = async (input: TemplateInput) => {
     const { template } = await api.createTemplate(input)
@@ -440,17 +516,30 @@ export function Planner({ user, onLogout }: { user: User; onLogout?: () => void 
       </main>
 
       <TemplateTray
-        templates={templates} categories={catMap} jobs={jobMap} armedId={armed?.templateId ?? null}
+        templates={templates.filter((t) => (t.folderId ?? null) === currentFolder)} allTemplates={templates}
+        folders={folders} current={currentFolder}
+        categories={catMap} jobs={jobMap} armedId={armed?.templateId ?? null}
         draggingId={drag?.template.templateId ?? null} reorderOverId={drag?.overTemplateId ?? null}
+        overFolder={drag?.overFolder ?? null}
         onPointerDown={gesture.onPointerDown}
         onKeyboardSelect={(t) => setArmed((a) => (a?.templateId === t.templateId ? null : t))}
-        onAdd={() => setFormOpen({})}
+        onOpenFolder={openFolder}
+        onAddFolder={() => setFolderSheet({})}
+        onEditFolder={(f) => setFolderSheet({ folder: f })}
+        onAdd={() => setFormOpen({ defaults: newTemplateDefaults() })}
       />
+      {folderSheet && (
+        <FolderSheet folder={folderSheet.folder}
+          parentName={folderName(folderSheet.folder ? folderSheet.folder.parentId : currentFolder)}
+          onSubmit={saveFolder}
+          onDelete={folderSheet.folder ? () => deleteFolder(folderSheet.folder!) : undefined}
+          onClose={() => setFolderSheet(null)} />
+      )}
 
       {drag && (
         <div className="drag-ghost" style={{ left: drag.x, top: drag.y, ['--c' as string]: catMap.get(drag.template.categoryId ?? '')?.color ?? '#6b7280' }} aria-hidden="true">
           <b>{drag.template.title}</b>
-          <span>{drag.overDate ? jpDate(drag.overDate) : drag.overTemplateId ? 'ここへ移動' : timeLabel(drag.template.startTime, drag.template.endTime)}</span>
+          <span>{drag.overDate ? jpDate(drag.overDate) : drag.overFolder ? `「${folderName(drag.overFolder === '@root' ? null : drag.overFolder)}」へ移動` : drag.overTemplateId ? 'ここへ移動' : timeLabel(drag.template.startTime, drag.template.endTime)}</span>
         </div>
       )}
 
@@ -480,9 +569,9 @@ export function Planner({ user, onLogout }: { user: User; onLogout?: () => void 
           date={creating.date} startTime={creating.startTime} endTime={creating.endTime}
           onSubmit={createEvent} onClose={() => setCreating(null)} />
       )}
-      {formOpen && <TemplateForm categories={categories} jobs={jobs} onCreateJob={createJob} onUpdateJob={updateJob} defaultCategoryId={formOpen.categoryId} onSubmit={createTemplate} onClose={() => setFormOpen(false)} />}
+      {formOpen && <TemplateForm categories={categories} jobs={jobs} onCreateJob={createJob} onUpdateJob={updateJob} defaultCategoryId={formOpen.categoryId} defaults={formOpen.defaults} folders={folders} onSubmit={createTemplate} onClose={() => setFormOpen(false)} />}
       {editingTemplate && (
-        <TemplateForm categories={categories} jobs={jobs} onCreateJob={createJob} onUpdateJob={updateJob} template={editingTemplate}
+        <TemplateForm categories={categories} jobs={jobs} onCreateJob={createJob} onUpdateJob={updateJob} template={editingTemplate} folders={folders}
           onSubmit={(input) => updateTemplate(editingTemplate, input)}
           onDelete={() => deleteTemplate(editingTemplate)}
           onClose={() => setEditingTemplate(null)} />

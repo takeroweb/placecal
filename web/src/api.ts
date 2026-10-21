@@ -1,4 +1,4 @@
-import type { CalEvent, Category, Earnings, EventInput, Job, JobInput, Template, TemplateInput, User } from './types'
+import type { CalEvent, Category, Earnings, EventInput, Folder, Job, JobInput, Template, TemplateInput, User } from './types'
 
 import { ApiError } from './apiError'
 import { localApi } from './local/backend'
@@ -52,6 +52,12 @@ const serverApi = {
   deleteJob: (id: string) => call<{ ok: true }>('DELETE', `/jobs/${id}`),
   /** month = 'YYYY-MM' */
   earnings: (month: string) => call<Earnings>('GET', `/earnings?month=${month}`),
+
+  folders: () => call<{ folders: Folder[] }>('GET', '/folders'),
+  createFolder: (f: { name: string; parentId: string | null }) => call<{ folder: Folder }>('POST', '/folders', f),
+  updateFolder: (id: string, f: Partial<{ name: string; parentId: string | null }>) => call<{ folder: Folder }>('PUT', `/folders/${id}`, f),
+  /** contents (templates / subfolders) move up to the parent folder */
+  deleteFolder: (id: string) => call<{ ok: true }>('DELETE', `/folders/${id}`),
 
   templates: () => call<{ templates: Template[] }>('GET', '/templates'),
   reorderTemplates: (templateIds: string[]) => call<{ templates: Template[] }>('PUT', '/templates/order', { templateIds }),

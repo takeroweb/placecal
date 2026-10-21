@@ -2,7 +2,7 @@
 // It mirrors server/src/resources.js and reuses the server's validation and pay calculation
 // so both builds behave the same. Data never leaves the device.
 import { ApiError } from '../apiError'
-import type { CalEvent, Category, Earnings, EventInput, Job, JobInput, Template, TemplateInput, User } from '../types'
+import type { CalEvent, Category, Earnings, EventInput, Folder, Job, JobInput, Template, TemplateInput, User } from '../types'
 import { read, requestPersistence, uuid, write, type Sorted, type State } from './store'
 // Shared with the server (plain ES modules, no Node APIs):
 import * as v from '../../../server/src/validate.js'
@@ -29,11 +29,11 @@ function fresh(): State {
     return { categoryId: ids[c.key], userId: 'local', name: c.name, color: c.color, sortOrder: i, createdAt: t, updatedAt: t }
   })
   const templates = DEFAULT_TEMPLATES.map((d: { cat: string; title: string; start: string | null; end: string | null; location: string }, i: number) => ({
-    templateId: uuid(), userId: 'local', title: d.title, categoryId: ids[d.cat], jobId: null, breakMinutes: 0,
+    templateId: uuid(), userId: 'local', title: d.title, categoryId: ids[d.cat], folderId: null, jobId: null, breakMinutes: 0,
     startTime: d.start, endTime: d.end, location: d.location, memo: '', notificationMinutes: null,
     sortOrder: i, createdAt: t, updatedAt: t,
   }))
-  return { v: 1, user, categories, templates, jobs: [], events: [] }
+  return { v: 1, user, categories, templates, folders: [], jobs: [], events: [] }
 }
 
 let loaded: Promise<State> | null = null
@@ -41,7 +41,11 @@ function state(): Promise<State> {
   loaded ??= (async () => {
     requestPersistence()
     const s = await read()
-    if (s && s.v === 1) return s
+    if (s && s.v === 1) {
+      s.folders ??= [] // data saved before folders existed
+      for (const t of s.templates) t.folderId ??= null
+      return s
+    }
     const f = fresh()
     await write(f)
     return f
@@ -68,6 +72,15 @@ async function run<T>(fn: (s: State) => T, mutate = false): Promise<T> {
 // ---------- lookups / validation (same rules as the server) ----------
 const ownCategory = (s: State, id: unknown) => (typeof id === 'string' ? s.categories.find((c) => c.categoryId === id) : undefined)
 const ownTemplate = (s: State, id: unknown) => (typeof id === 'string' ? s.templates.find((t) => t.templateId === id) : undefined)
+const folders = (s: State) => (s.folders ??= [])
+const ownFolder = (s: State, id: unknown) => (typeof id === 'string' ? folders(s).find((f) => f.folderId === id) : undefined)
+function checkFolder(s: State, id: unknown): string | null {
+  if (id === null || id === undefined || id === '') return null
+  if (!ownFolder(s, id)) throw bad('FOLDER_NOT_FOUND', 'フォルダが見つかりません', 'folderId')
+  return id as string
+}
+const MAX_DEPTH = 6
+const depthOf = (s: State, id: string | null) => { let d = 0; for (let f = ownFolder(s, id); f; f = ownFolder(s, f.parentId)) d++; return d }
 const ownJob = (s: State, id: unknown) => (typeof id === 'string' ? s.jobs.find((j) => j.jobId === id) : undefined)
 const ownEvent = (s: State, id: unknown) => (typeof id === 'string' ? s.events.find((e) => e.eventId === id) : undefined)
 
@@ -204,6 +217,41 @@ export const localApi = {
     return { month, ...summarizeEarnings(jobs, events, month) }
   }),
 
+  // ----- folders (List) -----
+  folders: () => run((s) => ({ folders: [...folders(s)].sort(bySort).map(strip) as Folder[] })),
+  createFolder: (b: { name: string; parentId: string | null }) => run((s) => {
+    const name = v.title(b.name, 'name', 'フォルダ名')
+    const parentId = checkFolder(s, b.parentId)
+    if (parentId && depthOf(s, parentId) >= MAX_DEPTH) throw bad('TOO_DEEP', `フォルダは${MAX_DEPTH}階層までです`, 'parentId')
+    const t = now()
+    const f: Sorted<Folder> = { folderId: uuid(), userId: 'local', parentId, name, sortOrder: nextSort(folders(s)), createdAt: t, updatedAt: t }
+    folders(s).push(f)
+    return { folder: strip(f) as Folder }
+  }, true),
+  updateFolder: (id: string, b: Partial<{ name: string; parentId: string | null }>) => run((s) => {
+    const f = ownFolder(s, id)
+    if (!f) throw notFound('FOLDER_NOT_FOUND', 'フォルダが見つかりません')
+    const name = has(b, 'name') ? v.title(b.name, 'name', 'フォルダ名') : f.name
+    let parentId = f.parentId
+    if (has(b, 'parentId')) {
+      parentId = checkFolder(s, b.parentId)
+      for (let p = ownFolder(s, parentId); p; p = ownFolder(s, p.parentId)) {
+        if (p.folderId === f.folderId) throw bad('INVALID_PARENT', 'フォルダを自分の中には移動できません', 'parentId')
+      }
+    }
+    Object.assign(f, { name, parentId, updatedAt: now() })
+    return { folder: strip(f) as Folder }
+  }, true),
+  /** Contents move up to the parent; nothing is deleted except the folder itself. */
+  deleteFolder: (id: string) => run((s) => {
+    const f = ownFolder(s, id)
+    if (!f) throw notFound('FOLDER_NOT_FOUND', 'フォルダが見つかりません')
+    for (const t of s.templates) if (t.folderId === id) t.folderId = f.parentId
+    for (const c of folders(s)) if (c.parentId === id) c.parentId = f.parentId
+    s.folders = folders(s).filter((x) => x.folderId !== id)
+    return { ok: true as const }
+  }, true),
+
   // ----- templates -----
   templates: () => run((s) => ({ templates: [...s.templates].sort(bySort).map(strip) as Template[] })),
   reorderTemplates: (ids: string[]) => run((s) => {
@@ -216,7 +264,8 @@ export const localApi = {
   }, true),
   createTemplate: (b: TemplateInput) => run((s) => {
     const t = now()
-    const tpl: Sorted<Template> = { templateId: uuid(), userId: 'local', ...validateBody(s, b as Body, false), sortOrder: nextSort(s.templates), createdAt: t, updatedAt: t }
+    const folderId = checkFolder(s, (b as Body).folderId)
+    const tpl: Sorted<Template> = { templateId: uuid(), userId: 'local', ...validateBody(s, b as Body, false), folderId, sortOrder: nextSort(s.templates), createdAt: t, updatedAt: t }
     s.templates.push(tpl)
     return { template: strip(tpl) as Template }
   }, true),
@@ -224,7 +273,8 @@ export const localApi = {
     const cur = ownTemplate(s, id)
     if (!cur) throw notFound('TEMPLATE_NOT_FOUND', 'テンプレートが見つかりません')
     const d = validateBody(s, { ...cur, ...b }, !has(b, 'categoryId'))
-    Object.assign(cur, d, { updatedAt: now() })
+    const folderId = has(b, 'folderId') ? checkFolder(s, (b as Body).folderId) : cur.folderId
+    Object.assign(cur, d, { folderId, updatedAt: now() })
     return { template: strip(cur) as Template }
   }, true),
   /** Placed events keep their copied values; only the link to the template is cleared. */
@@ -315,5 +365,7 @@ export async function importBackup(text: string): Promise<void> {
   s.templates = d.templates!
   s.jobs = d.jobs!
   s.events = d.events!
+  s.folders = d.folders ?? []
+  for (const t of s.templates) t.folderId ??= null
   await write(s)
 }

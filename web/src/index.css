@@ -106,7 +106,11 @@ input, select { font: inherit; color: inherit; }
 .chip.pending { opacity: .6; }
 .chip.moving { opacity: .35; }
 .cal.is-armed .chip { cursor: inherit; }
-.chip-time { font-variant-numeric: tabular-nums; opacity: .9; display: none; }
+.chip-time { font-variant-numeric: tabular-nums; opacity: .92; }
+.chip-time.full { display: none; }
+/* phone: two lines — time on top, title below */
+.chip:has(.chip-time) { flex-direction: column; align-items: stretch; gap: 0; }
+.chip-time.short { font-size: 9px; line-height: 11px; font-weight: 600; }
 .chip-title { overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .chip-more { all: unset; position: absolute; top: 3px; right: 2px; font-size: 10px; line-height: 20px; color: var(--ink-3); padding: 0 4px; cursor: pointer; border-radius: 4px; font-weight: 600; }
 .chip-more:hover { background: var(--line-2); color: var(--ink); }
@@ -115,7 +119,9 @@ input, select { font: inherit; color: inherit; }
   .cal-cell { padding: 4px; align-items: stretch; }
   .cal-num { margin: 0; }
   .chip { font-size: 11px; line-height: 16px; padding: 1px 5px; }
-  .chip-time { display: inline; }
+  .chip:has(.chip-time) { flex-direction: row; align-items: baseline; gap: 4px; }
+  .chip-time.short { display: none; }
+  .chip-time.full { display: inline; }
 }
 
 /* ---------- banners ---------- */
@@ -132,15 +138,15 @@ input, select { font: inherit; color: inherit; }
 
 /* ---------- template tray ---------- */
 .tray { display: flex; flex-direction: column; min-height: 0; padding: 8px 6px 6px; }
-.tray-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 0 4px 6px; }
+.tray-head { display: flex; align-items: center; gap: 6px; padding: 0 2px 4px; min-height: 32px; }
 .tray-head h2 { font-size: 13px; margin: 0; font-weight: 700; letter-spacing: .04em; }
-.tray-hint { margin: 0; font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tray-hint { margin: 0; flex: 1; text-align: right; font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .only-mouse { display: none; }
 @media (hover: hover) and (pointer: fine) { .only-mouse { display: inline; } .only-touch { display: none; } }
 
 .tray-grid {
   flex: 1; min-height: 0; display: grid; grid-auto-flow: column; grid-template-rows: repeat(2, minmax(0, 1fr));
-  grid-auto-columns: minmax(112px, 1fr); gap: 8px; overflow-x: auto; overflow-y: hidden;
+  grid-auto-columns: calc((100% - 16px) / 3); /* 3 cards per row on phones, scroll for more */ gap: 8px; overflow-x: auto; overflow-y: hidden;
   padding: 2px 2px 4px; scrollbar-width: thin;
 }
 .tcard {
@@ -412,3 +418,29 @@ a.icon-btn { color: inherit; }
 .acct-actions a.btn { display: inline-flex; align-items: center; text-decoration: none; color: inherit; }
 .file-btn { position: relative; display: inline-flex; align-items: center; overflow: hidden; cursor: pointer; }
 .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+/* ---------- List (folders) ---------- */
+.crumbs { display: flex; align-items: center; gap: 2px; min-width: 0; flex: 0 1 auto; overflow-x: auto; scrollbar-width: none; }
+.crumbs::-webkit-scrollbar { display: none; }
+.crumb-wrap { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+.crumb { border: 0; background: transparent; font-size: 13px; font-weight: 600; color: var(--ink-2); padding: 4px 6px; border-radius: 8px; cursor: pointer; white-space: nowrap; flex: none; }
+.crumb[aria-current="true"] { color: var(--ink); font-weight: 800; letter-spacing: .02em; }
+.crumb-sep { color: var(--ink-3); font-size: 12px; }
+.crumb-back { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); display: grid; place-items: center; cursor: pointer; color: var(--ink); flex: none; }
+.crumb.drop, .crumb-back.drop { background: var(--drop); box-shadow: inset 0 0 0 2px var(--today); color: var(--ink); }
+.tray-actions { display: flex; gap: 2px; flex: none; }
+.icon-btn.sm { width: 32px; height: 32px; }
+.tcard.folder { cursor: pointer; touch-action: manipulation; background: color-mix(in srgb, var(--ink) 4%, var(--surface)); }
+.folder-tab { position: absolute; left: 10px; top: 0; width: 34px; height: 4px; border-radius: 0 0 4px 4px; background: var(--ink-3); opacity: .5; }
+.folder-ico { vertical-align: -2px; margin-right: 4px; color: var(--ink-2); }
+.folder-dots { position: absolute; right: 8px; top: 9px; display: flex; gap: 3px; }
+.folder-dots i { width: 7px; height: 7px; border-radius: 50%; }
+.tcard.folder.drop { box-shadow: 0 0 0 2px var(--today), var(--shadow); background: var(--drop); transform: translateY(-2px); }
+
+/* phone header: keep 「2026年10月」 on one line next to the icons */
+.month-title { white-space: nowrap; }
+@media (max-width: 420px) {
+  .topbar .icon-btn { width: 34px; }
+  .month-nav .icon-btn { width: 32px; }
+  .top-actions { gap: 0; }
+}

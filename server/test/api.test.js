@@ -517,3 +517,49 @@ describe('public server safety', () => {
     assert.equal((await request(app).get('/api/widget').set('Authorization', `Bearer ${token}`)).status, 401);
   });
 });
+
+describe('List folders', () => {
+  let A, B, catId;
+  before(async () => {
+    A = await signup('folders@example.com');
+    B = await signup('folders-b@example.com');
+    catId = (await A.get('/api/categories')).body.categories[0].categoryId;
+  });
+
+  test('nested folders hold templates; delete moves contents up', async () => {
+    const baito = (await A.post('/api/folders').send({ name: 'バイト' })).body.folder;
+    const hotel = (await A.post('/api/folders').send({ name: 'ホテル', parentId: baito.folderId })).body.folder;
+    assert.equal(hotel.parentId, baito.folderId);
+    const t = (await A.post('/api/templates').send({ title: 'ホテル', categoryId: catId, folderId: hotel.folderId, startTime: '17:00', endTime: '22:00' })).body.template;
+    assert.equal(t.folderId, hotel.folderId);
+    // moving a template keeps its other values
+    const moved = (await A.put(`/api/templates/${t.templateId}`).send({ folderId: baito.folderId })).body.template;
+    assert.equal(moved.folderId, baito.folderId);
+    assert.equal(moved.startTime, '17:00');
+    await A.put(`/api/templates/${t.templateId}`).send({ folderId: hotel.folderId });
+    // other edits keep the folder
+    assert.equal((await A.put(`/api/templates/${t.templateId}`).send({ title: 'ホテル夜' })).body.template.folderId, hotel.folderId);
+    // placing still copies the template as before
+    assert.equal((await A.post('/api/events').send({ templateId: t.templateId, date: '2026-12-01' })).status, 201);
+
+    await A.delete(`/api/folders/${hotel.folderId}`);
+    const after = (await A.get('/api/templates')).body.templates.find((x) => x.templateId === t.templateId);
+    assert.equal(after.folderId, baito.folderId); // moved up, not deleted
+    await A.delete(`/api/folders/${baito.folderId}`);
+    assert.equal((await A.get('/api/templates')).body.templates.find((x) => x.templateId === t.templateId).folderId, null);
+  });
+
+  test('rename, no cycles, ownership', async () => {
+    const a = (await A.post('/api/folders').send({ name: 'a' })).body.folder;
+    const b = (await A.post('/api/folders').send({ name: 'b', parentId: a.folderId })).body.folder;
+    assert.equal((await A.put(`/api/folders/${a.folderId}`).send({ name: '中華' })).body.folder.name, '中華');
+    assert.equal((await A.put(`/api/folders/${a.folderId}`).send({ parentId: b.folderId })).body.error.code, 'INVALID_PARENT');
+    assert.equal((await A.put(`/api/folders/${a.folderId}`).send({ parentId: a.folderId })).body.error.code, 'INVALID_PARENT');
+    assert.equal((await A.post('/api/folders').send({ name: '' })).body.error.code, 'TITLE_REQUIRED');
+    assert.equal((await B.get('/api/folders')).body.folders.length, 0);
+    assert.equal((await B.put(`/api/folders/${a.folderId}`).send({ name: 'x' })).status, 404);
+    assert.equal((await B.post('/api/folders').send({ name: 'x', parentId: a.folderId })).body.error.code, 'FOLDER_NOT_FOUND');
+    const bCat = (await B.get('/api/categories')).body.categories[0].categoryId;
+    assert.equal((await B.post('/api/templates').send({ title: 'x', categoryId: bCat, folderId: a.folderId })).body.error.code, 'FOLDER_NOT_FOUND');
+  });
+});

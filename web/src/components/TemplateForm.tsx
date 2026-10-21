@@ -1,15 +1,30 @@
 import { useState } from 'react'
 import { ApiError } from '../api'
 import { NOTIFY_OPTIONS } from '../dates'
-import type { CalEvent, Category, EventInput, Job, JobInput, Template, TemplateInput } from '../types'
+import type { CalEvent, Category, EventInput, Folder, Job, JobInput, Template, TemplateInput } from '../types'
 
 type Values = TemplateInput & { date?: string; endDate?: string }
 
 const NEW = '__new'
 
+/** Folders as an indented tree (ideographic-space indent): 'バイト', ' › ホテル', … */
+function folderOptions(folders: Folder[]) {
+  const out: { id: string; label: string }[] = []
+  const walk = (parent: string | null, depth: number) => {
+    for (const f of folders.filter((x) => x.parentId === parent)) {
+      out.push({ id: f.folderId, label: `${'\u3000'.repeat(depth)}${depth ? '› ' : ''}${f.name}` })
+      walk(f.folderId, depth + 1)
+    }
+  }
+  walk(null, 0)
+  return out
+}
+
 const dayCount = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86400e3) + 1
 
 type FormProps = {
+  /** template forms: List folders, so the template can be put in / moved to one */
+  folders?: Folder[]
   heading: string
   sub: string
   categories: Category[]
@@ -28,12 +43,15 @@ type FormProps = {
 }
 
 /** Shared sheet for creating/editing templates and editing events. */
-function ItemForm({ heading, sub, categories, jobs, onCreateJob, onUpdateJob, initial = {}, withDate, withRange, onSubmit, onDelete, onClose }: FormProps) {
+function ItemForm({ heading, sub, categories, folders, jobs, onCreateJob, onUpdateJob, initial = {}, withDate, withRange, onSubmit, onDelete, onClose }: FormProps) {
+  // Editing an existing template/event (vs. creating one, possibly with prefilled defaults).
+  const editing = 'templateId' in initial || 'eventId' in initial
   const [title, setTitle] = useState(initial.title ?? '')
-  const [categoryId, setCategoryId] = useState(initial.categoryId ?? (initial.title ? '' : categories[0]?.categoryId ?? ''))
+  const [categoryId, setCategoryId] = useState(initial.categoryId ?? (editing ? '' : categories[0]?.categoryId ?? ''))
+  const [folderId, setFolderId] = useState(initial.folderId ?? '')
   const [date, setDate] = useState(initial.date ?? '')
   const [endDate, setEndDate] = useState('')
-  const [allDay, setAllDay] = useState(initial.title !== undefined && !initial.startTime)
+  const [allDay, setAllDay] = useState(editing && !initial.startTime)
   const [startTime, setStart] = useState(initial.startTime ?? '17:00')
   const [endTime, setEnd] = useState(initial.endTime ?? '22:00')
   const [location, setLocation] = useState(initial.location ?? '')
@@ -79,6 +97,7 @@ function ItemForm({ heading, sub, categories, jobs, onCreateJob, onUpdateJob, in
       await onSubmit({
         title: title.trim(), categoryId: categoryId || null,
         jobId: jobId || null, breakMinutes: brk,
+        ...(folders ? { folderId: folderId || null } : {}),
         startTime: allDay ? null : startTime, endTime: allDay ? null : endTime,
         location, memo, notificationMinutes: notify === '' ? null : Number(notify),
         ...(withDate ? { date } : {}),
@@ -115,6 +134,16 @@ function ItemForm({ heading, sub, categories, jobs, onCreateJob, onUpdateJob, in
             ))}
           </div>
         </fieldset>
+
+        {folders && folders.length > 0 && (
+          <label className="field">
+            <span>フォルダ <small>List のどこに置くか</small></span>
+            <select value={folderId} onChange={(e) => setFolderId(e.target.value)}>
+              <option value="">List（一番上）</option>
+              {folderOptions(folders).map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+            </select>
+          </label>
+        )}
 
         {withDate && !withRange && (
           <label className="field">
@@ -256,18 +285,22 @@ type TemplateProps = {
   template?: Template
   /** preselected category when creating (e.g. from the category sheet) */
   defaultCategoryId?: string
+  /** prefilled values when creating (e.g. inside a List folder: its name, category, folder) */
+  defaults?: Partial<TemplateInput>
+  folders?: Folder[]
   onSubmit: (t: TemplateInput) => Promise<void>
   onDelete?: () => void
   onClose: () => void
 }
 
 /** Creating is the one time the user types title/time; editing never touches already-placed events. */
-export function TemplateForm({ categories, jobs, onCreateJob, onUpdateJob, template, defaultCategoryId, onSubmit, onDelete, onClose }: TemplateProps) {
+export function TemplateForm({ categories, jobs, onCreateJob, onUpdateJob, template, defaultCategoryId, defaults, folders, onSubmit, onDelete, onClose }: TemplateProps) {
   return (
     <ItemForm
       heading={template ? 'テンプレートを編集' : 'テンプレートを作成'}
       sub={template ? '変更しても、配置済みの予定はそのままです。' : '一度作れば、あとは日付に置くだけ。'}
-      categories={categories} jobs={jobs} onCreateJob={onCreateJob} onUpdateJob={onUpdateJob} initial={template ?? (defaultCategoryId ? { categoryId: defaultCategoryId } : undefined)}
+      categories={categories} folders={folders} jobs={jobs} onCreateJob={onCreateJob} onUpdateJob={onUpdateJob}
+      initial={template ?? { ...defaults, ...(defaultCategoryId ? { categoryId: defaultCategoryId } : {}) }}
       onSubmit={(v) => onSubmit(clean(v))} onDelete={onDelete} onClose={onClose}
     />
   )

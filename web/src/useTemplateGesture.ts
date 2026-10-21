@@ -10,14 +10,25 @@ import type { Template } from './types'
  *          sideways movement             → ignored, browser scrolls the tray (touch-action: pan-x)
  *  any   : tap without moving            → toggle placement mode, then tap dates
  *  drag released on another template card → reorder (the card moves to that position)
+ *  drag released on a folder (or the "back" crumb) → move the template into that folder
  */
-export type DragState = { template: Template; x: number; y: number; overDate: string | null; overTemplateId: string | null }
+export type DragState = {
+  template: Template; x: number; y: number
+  overDate: string | null; overTemplateId: string | null
+  /** folder under the pointer: a folderId, ROOT_FOLDER for the top level, or null */
+  overFolder: string | null
+}
+
+/** data-folder-drop value meaning "top level of the List" */
+export const ROOT_FOLDER = '@root'
 
 type Opts = {
   onDrop: (t: Template, date: string) => void
   onTap: (t: Template) => void
   onSwipeNoTarget: (t: Template) => void
   onReorder: (t: Template, targetId: string) => void
+  /** folderId null = top level */
+  onMoveToFolder: (t: Template, folderId: string | null) => void
 }
 
 export function dateAtPoint(x: number, y: number): string | null {
@@ -30,10 +41,15 @@ function templateAtPoint(x: number, y: number): string | null {
   return el?.closest<HTMLElement>('[data-template-id]')?.dataset.templateId ?? null
 }
 
-export function useTemplateGesture({ onDrop, onTap, onSwipeNoTarget, onReorder }: Opts) {
+function folderAtPoint(x: number, y: number): string | null {
+  const el = document.elementFromPoint(x, y) as HTMLElement | null
+  return el?.closest<HTMLElement>('[data-folder-drop]')?.dataset.folderDrop ?? null
+}
+
+export function useTemplateGesture({ onDrop, onTap, onSwipeNoTarget, onReorder, onMoveToFolder }: Opts) {
   const [drag, setDrag] = useState<DragState | null>(null)
-  const opts = useRef({ onDrop, onTap, onSwipeNoTarget, onReorder })
-  opts.current = { onDrop, onTap, onSwipeNoTarget, onReorder }
+  const opts = useRef({ onDrop, onTap, onSwipeNoTarget, onReorder, onMoveToFolder })
+  opts.current = { onDrop, onTap, onSwipeNoTarget, onReorder, onMoveToFolder }
   const cleanup = useRef<() => void>(() => {})
 
   useEffect(() => () => cleanup.current(), [])
@@ -64,6 +80,7 @@ export function useTemplateGesture({ onDrop, onTap, onSwipeNoTarget, onReorder }
         setDrag({
           template, x: ev.clientX, y: ev.clientY, overDate: dateAtPoint(ev.clientX, ev.clientY),
           overTemplateId: over === template.templateId ? null : over,
+          overFolder: folderAtPoint(ev.clientX, ev.clientY),
         })
       }
     }
@@ -73,7 +90,9 @@ export function useTemplateGesture({ onDrop, onTap, onSwipeNoTarget, onReorder }
       if (mode === 'drag') {
         const date = dateAtPoint(ev.clientX, ev.clientY)
         const target = templateAtPoint(ev.clientX, ev.clientY)
+        const folder = folderAtPoint(ev.clientX, ev.clientY)
         if (date) opts.current.onDrop(template, date)
+        else if (folder) opts.current.onMoveToFolder(template, folder === ROOT_FOLDER ? null : folder)
         else if (target && target !== template.templateId) opts.current.onReorder(template, target)
         else if (!isMouse && !target) opts.current.onSwipeNoTarget(template)
       } else if (mode === 'pending') {

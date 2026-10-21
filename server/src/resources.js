@@ -19,8 +19,12 @@ const toJob = (r) => ({
   breakRules: JSON.parse(r.break_rules || '[]'),
   createdAt: r.created_at, updatedAt: r.updated_at,
 });
+const toFolder = (r) => ({
+  folderId: r.id, userId: r.user_id, parentId: r.parent_id, name: r.name,
+  createdAt: r.created_at, updatedAt: r.updated_at,
+});
 const toTemplate = (r) => ({
-  templateId: r.id, userId: r.user_id, title: r.title, categoryId: r.category_id,
+  templateId: r.id, userId: r.user_id, title: r.title, categoryId: r.category_id, folderId: r.folder_id,
   jobId: r.job_id, breakMinutes: r.break_minutes,
   startTime: r.start_time, endTime: r.end_time, location: r.location, memo: r.memo,
   notificationMinutes: r.notification_minutes, createdAt: r.created_at, updatedAt: r.updated_at,
@@ -43,6 +47,14 @@ export function resourceRouter(db) {
     typeof id === 'string' && db.prepare('SELECT * FROM categories WHERE id=? AND user_id=?').get(id, userId);
   const ownTemplate = (userId, id) =>
     typeof id === 'string' && db.prepare('SELECT * FROM templates WHERE id=? AND user_id=?').get(id, userId);
+  const ownFolder = (userId, id) =>
+    typeof id === 'string' && db.prepare('SELECT * FROM folders WHERE id=? AND user_id=?').get(id, userId);
+  /** folderId: null = top level of the List; otherwise the user's own folder. */
+  const checkFolder = (userId, id) => {
+    if (id === null || id === undefined || id === '') return null;
+    if (!ownFolder(userId, id)) throw bad('FOLDER_NOT_FOUND', 'フォルダが見つかりません', 'folderId');
+    return id;
+  };
   const ownJob = (userId, id) =>
     typeof id === 'string' && db.prepare('SELECT * FROM jobs WHERE id=? AND user_id=?').get(id, userId);
   const ownEvent = (userId, id) =>
@@ -223,6 +235,57 @@ export function resourceRouter(db) {
     });
   });
 
+  // ---------- Folders (List) ----------
+  const MAX_DEPTH = 6;
+  const depthOf = (userId, id) => { let d = 0; for (let f = ownFolder(userId, id); f; f = ownFolder(userId, f.parent_id)) d++; return d; };
+
+  r.get('/folders', (req, res) => {
+    const rows = db.prepare('SELECT * FROM folders WHERE user_id=? ORDER BY sort_order, created_at').all(req.user.id);
+    res.json({ folders: rows.map(toFolder) });
+  });
+
+  r.post('/folders', (req, res) => {
+    const b = req.body ?? {};
+    const name = v.title(b.name, 'name', 'フォルダ名');
+    const parentId = checkFolder(req.user.id, b.parentId);
+    if (parentId && depthOf(req.user.id, parentId) >= MAX_DEPTH) throw bad('TOO_DEEP', `フォルダは${MAX_DEPTH}階層までです`, 'parentId');
+    const id = crypto.randomUUID(), t = now();
+    const max = db.prepare('SELECT COALESCE(MAX(sort_order),-1) m FROM folders WHERE user_id=?').get(req.user.id).m;
+    db.prepare('INSERT INTO folders (id,user_id,parent_id,name,sort_order,created_at,updated_at) VALUES (?,?,?,?,?,?,?)')
+      .run(id, req.user.id, parentId, name, max + 1, t, t);
+    res.status(201).json({ folder: toFolder(ownFolder(req.user.id, id)) });
+  });
+
+  r.put('/folders/:id', (req, res) => {
+    const cur = ownFolder(req.user.id, req.params.id);
+    if (!cur) throw notFound('FOLDER_NOT_FOUND', 'フォルダが見つかりません');
+    const b = req.body ?? {};
+    const name = has(b, 'name') ? v.title(b.name, 'name', 'フォルダ名') : cur.name;
+    let parentId = cur.parent_id;
+    if (has(b, 'parentId')) {
+      parentId = checkFolder(req.user.id, b.parentId);
+      // A folder can't move into itself or one of its own subfolders.
+      for (let f = parentId && ownFolder(req.user.id, parentId); f; f = ownFolder(req.user.id, f.parent_id)) {
+        if (f.id === cur.id) throw bad('INVALID_PARENT', 'フォルダを自分の中には移動できません', 'parentId');
+      }
+    }
+    db.prepare('UPDATE folders SET name=?, parent_id=?, updated_at=? WHERE id=? AND user_id=?')
+      .run(name, parentId, now(), cur.id, req.user.id);
+    res.json({ folder: toFolder(ownFolder(req.user.id, cur.id)) });
+  });
+
+  // Deleting a folder never deletes templates: its contents move up to the parent folder.
+  r.delete('/folders/:id', (req, res) => {
+    const cur = ownFolder(req.user.id, req.params.id);
+    if (!cur) throw notFound('FOLDER_NOT_FOUND', 'フォルダが見つかりません');
+    tx(db, () => {
+      db.prepare('UPDATE templates SET folder_id=? WHERE folder_id=? AND user_id=?').run(cur.parent_id, cur.id, req.user.id);
+      db.prepare('UPDATE folders SET parent_id=? WHERE parent_id=? AND user_id=?').run(cur.parent_id, cur.id, req.user.id);
+      db.prepare('DELETE FROM folders WHERE id=? AND user_id=?').run(cur.id, req.user.id);
+    });
+    res.json({ ok: true, folderId: cur.id });
+  });
+
   // ---------- Templates ----------
   r.get('/templates', (req, res) => {
     const rows = db.prepare('SELECT * FROM templates WHERE user_id=? ORDER BY sort_order, created_at').all(req.user.id);
@@ -231,11 +294,12 @@ export function resourceRouter(db) {
 
   r.post('/templates', (req, res) => {
     const d = validateBody(req.user.id, req.body ?? {}, { allowNullCategory: false });
+    const folderId = checkFolder(req.user.id, req.body?.folderId);
     const id = crypto.randomUUID(), t = now();
     const max = db.prepare('SELECT COALESCE(MAX(sort_order),-1) m FROM templates WHERE user_id=?').get(req.user.id).m;
-    db.prepare(`INSERT INTO templates (id,user_id,title,category_id,job_id,break_minutes,start_time,end_time,location,memo,
-                notification_minutes,sort_order,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(id, req.user.id, d.title, d.categoryId, d.jobId, d.breakMinutes, d.startTime, d.endTime, d.location, d.memo,
+    db.prepare(`INSERT INTO templates (id,user_id,title,category_id,folder_id,job_id,break_minutes,start_time,end_time,location,memo,
+                notification_minutes,sort_order,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(id, req.user.id, d.title, d.categoryId, folderId, d.jobId, d.breakMinutes, d.startTime, d.endTime, d.location, d.memo,
         d.notificationMinutes, max + 1, t, t);
     res.status(201).json({ template: toTemplate(ownTemplate(req.user.id, id)) });
   });
@@ -258,9 +322,10 @@ export function resourceRouter(db) {
     if (!cur) throw notFound('TEMPLATE_NOT_FOUND', 'テンプレートが見つかりません');
     const merged = { ...toTemplate(cur), ...(req.body ?? {}) };
     const d = validateBody(req.user.id, merged, { allowNullCategory: !has(req.body ?? {}, 'categoryId') });
-    db.prepare(`UPDATE templates SET title=?,category_id=?,job_id=?,break_minutes=?,start_time=?,end_time=?,location=?,memo=?,
+    const folderId = has(req.body ?? {}, 'folderId') ? checkFolder(req.user.id, req.body.folderId) : cur.folder_id;
+    db.prepare(`UPDATE templates SET title=?,category_id=?,folder_id=?,job_id=?,break_minutes=?,start_time=?,end_time=?,location=?,memo=?,
                 notification_minutes=?,updated_at=? WHERE id=? AND user_id=?`)
-      .run(d.title, d.categoryId, d.jobId, d.breakMinutes, d.startTime, d.endTime, d.location, d.memo, d.notificationMinutes, now(),
+      .run(d.title, d.categoryId, folderId, d.jobId, d.breakMinutes, d.startTime, d.endTime, d.location, d.memo, d.notificationMinutes, now(),
         cur.id, req.user.id);
     res.json({ template: toTemplate(ownTemplate(req.user.id, cur.id)) });
   });

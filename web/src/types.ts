@@ -23,8 +23,16 @@ export type BreakRule = { overMinutes: number; breakMinutes: number }
 export type JobInput = Pick<Job, 'name' | 'hourlyWage' | 'transportFee'>
   & Partial<Pick<Job, 'color' | 'closingDay' | 'payDay' | 'payMonthOffset' | 'breakRules'>>
 
+/** List のフォルダ (nestable). parentId null = top level. */
+export type Folder = {
+  folderId: string; userId: string; parentId: string | null; name: string
+  createdAt: string; updatedAt: string
+}
+
 export type Template = {
   templateId: string; userId: string; title: string; categoryId: string | null
+  /** List のフォルダ (null = top level) */
+  folderId: string | null
   jobId: string | null; breakMinutes: number
   startTime: string | null; endTime: string | null; location: string; memo: string
   notificationMinutes: number | null; createdAt: string; updatedAt: string
@@ -41,6 +49,7 @@ export type CalEvent = {
 
 export type TemplateInput = Pick<Template,
   'title' | 'categoryId' | 'jobId' | 'breakMinutes' | 'startTime' | 'endTime' | 'location' | 'memo' | 'notificationMinutes'>
+  & { folderId?: string | null }
 
 export type EventInput = TemplateInput & { date: string }
 

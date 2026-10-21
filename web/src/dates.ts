@@ -4,10 +4,10 @@ const pad = (n: number) => String(n).padStart(2, '0')
 export const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 export const todayStr = () => ymd(new Date())
 
-/** Weeks (Mon-start) covering the given month. */
+/** Weeks (Sunday-start) covering the given month. */
 export function monthGrid(year: number, month: number): Date[][] {
   const first = new Date(year, month, 1)
-  const offset = (first.getDay() + 6) % 7 // Mon = 0
+  const offset = first.getDay() // weeks start on Sunday (Sun = 0)
   const start = new Date(year, month, 1 - offset)
   const last = new Date(year, month + 1, 0)
   const totalDays = offset + last.getDate()
@@ -22,6 +22,15 @@ export function monthGrid(year: number, month: number): Date[][] {
 }
 
 export const WEEKDAYS = ['月', '火', '水', '木', '金', '土', '日']
+/** Calendar header order (week starts on Sunday); index = Date.getDay() */
+export const WEEKDAYS_SUN = ['日', '月', '火', '水', '木', '金', '土']
+
+/** Compact time range for small calendar chips: '17:00','22:00' → '17-22', '09:30','12:00' → '9:30-12' */
+export function shortRange(s: string | null, e: string | null) {
+  if (!s) return ''
+  const t = (x: string) => x.replace(/^0/, '').replace(/:00$/, '')
+  return e ? `${t(s)}-${t(e)}` : t(s)
+}
 
 export function timeLabel(s: string | null, e: string | null) {
   return s && e ? `${s}〜${e}` : '終日'
