@@ -83,10 +83,10 @@ export const Calendar = memo(function Calendar(p: Props) {
                           }}
                           onContextMenu={(ev) => ev.preventDefault()}
                         >
-                          {/* phone: '17-22' on its own line; wider screens: '17:00-22:00' before the title */}
+                          {/* title on top, the time below in small type ('17-22' on phones, '17:00-22:00' when wider) */}
+                          <span className="chip-title">{e.title}</span>
                           {e.startTime && <span className="chip-time short">{shortRange(e.startTime, e.endTime)}</span>}
                           {e.startTime && <span className="chip-time full">{e.startTime}{e.endTime ? `-${e.endTime}` : ''}</span>}
-                          <span className="chip-title">{e.title}</span>
                         </button>
                       )
                     })}

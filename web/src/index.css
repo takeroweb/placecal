@@ -108,9 +108,9 @@ input, select { font: inherit; color: inherit; }
 .cal.is-armed .chip { cursor: inherit; }
 .chip-time { font-variant-numeric: tabular-nums; opacity: .92; }
 .chip-time.full { display: none; }
-/* phone: two lines — time on top, title below */
+/* two lines — title on top, the time below in small type */
 .chip:has(.chip-time) { flex-direction: column; align-items: stretch; gap: 0; }
-.chip-time.short { font-size: 9px; line-height: 11px; font-weight: 600; }
+.chip-time { font-size: 8px; line-height: 10px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chip-title { overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .chip-more { all: unset; position: absolute; top: 3px; right: 2px; font-size: 10px; line-height: 20px; color: var(--ink-3); padding: 0 4px; cursor: pointer; border-radius: 4px; font-weight: 600; }
 .chip-more:hover { background: var(--line-2); color: var(--ink); }
@@ -119,9 +119,9 @@ input, select { font: inherit; color: inherit; }
   .cal-cell { padding: 4px; align-items: stretch; }
   .cal-num { margin: 0; }
   .chip { font-size: 11px; line-height: 16px; padding: 1px 5px; }
-  .chip:has(.chip-time) { flex-direction: row; align-items: baseline; gap: 4px; }
+  .chip-time { font-size: 9.5px; line-height: 12px; }
   .chip-time.short { display: none; }
-  .chip-time.full { display: inline; }
+  .chip-time.full { display: block; }
 }
 
 /* ---------- banners ---------- */
